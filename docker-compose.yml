@@ -1,0 +1,23 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: aiquiz-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aiquiz
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+  api:
+    build: .
+    container_name: aiquiz-api
+    env_file: .env.example
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+volumes:
+  dbdata:
