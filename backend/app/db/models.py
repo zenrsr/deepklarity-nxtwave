@@ -18,5 +18,6 @@ class Quiz(Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     etag: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_modified: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # JSONB if Postgres, fall back to generic JSON type otherwise
     full_quiz_data: Mapped[dict] = mapped_column(JSONB().with_variant(JSONType(), "sqlite"), nullable=False)
+
+

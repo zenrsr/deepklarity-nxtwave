@@ -1,6 +1,5 @@
-# app/services/quiz_generator.py
 from typing import Any, Dict, List
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import RunnableSequence
@@ -8,15 +7,27 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from app.core.config import settings
 
-# ---------------- Pydantic models returned by the LLM ----------------
+class RateLimitError(Exception):
+    def __init__(self, retry_after: int | None = None, message: str = "Rate limited"):
+        self.retry_after = retry_after
+        super().__init__(message)
+
 
 class QuizItemModel(BaseModel):
     question: str
     options: List[str] = Field(min_length=4, max_length=4)
     answer: str
-    difficulty: str  # will coerce to lower by normalization guard
+    difficulty: str
     explanation: str
     evidence_span: str
+
+    @field_validator("difficulty", mode="before")
+    @classmethod
+    def coerce_difficulty_lower(cls, v: Any) -> str:
+        s = str(v).strip().lower()
+        if s not in {"easy", "medium", "hard"}:
+            raise ValueError("difficulty must be one of: easy, medium, hard")
+        return s
 
 class KeyEntitiesModel(BaseModel):
     people: List[str] = []
@@ -32,7 +43,6 @@ class QuizOutputModel(BaseModel):
     related_topics: List[str]
     notes: str | None = None
 
-# ---------------- System prompt (ALL braces escaped) ----------------
 
 SYSTEM_PROMPT = """
 You are an expert quiz writer with rigorous attention to textual accuracy.
@@ -94,7 +104,42 @@ def _get_model() -> ChatGoogleGenerativeAI:
             last_err = e
     raise RuntimeError(f"Unable to initialize any Gemini model. Tried: {tried}. Last error: {last_err}")
 
-# ---------------- Chain construction ----------------
+def _trim_article(text: str, hard_char_limit: int = 80_000) -> str:
+    """
+    Hard cut the article text to a safe character budget to lower input tokens.
+    Try to cut at a section boundary if possible.
+    """
+    if len(text) <= hard_char_limit:
+        return text
+    cut = text[:hard_char_limit]
+    nl = cut.rfind("\n")
+    if nl > hard_char_limit * 0.8:
+        cut = cut[:nl]
+    return cut
+
+def _normalize_result(obj: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Guardrail:
+    - If key_entities is a flat dict {name:desc}, convert to required arrays.
+    - Coerce difficulty to lowercase.
+    - Ensure required arrays exist.
+    """
+    ke = obj.get("key_entities")
+    if isinstance(ke, dict) and not {"people", "organizations", "locations"}.issubset(ke.keys()):
+        names = list(ke.keys())
+        obj["key_entities"] = {"people": names, "organizations": [], "locations": []}
+    elif ke is None:
+        obj["key_entities"] = {"people": [], "organizations": [], "locations": []}
+
+    if isinstance(obj.get("quiz"), list):
+        for q in obj["quiz"]:
+            if isinstance(q.get("difficulty"), str):
+                q["difficulty"] = q["difficulty"].strip().lower()
+
+    obj.setdefault("sections", [])
+    obj.setdefault("related_topics", [])
+    return obj
+
 
 @retry(stop=stop_after_attempt(2), wait=wait_exponential_jitter(initial=1, max=4))
 def build_chain() -> RunnableSequence:
@@ -112,11 +157,10 @@ def build_chain() -> RunnableSequence:
             "Schema Instructions: {format_instructions}\n"
             "Respond with JSON only."
         ))
-    ]).partial(format_instructions=parser.get_format_instructions())  # <- call the function
+    ]).partial(format_instructions=parser.get_format_instructions()) 
 
     return prompt | model | parser
 
-# ---------------- Self-repair path (stays parser-based) ----------------
 
 def _repair_with_error(
     model: ChatGoogleGenerativeAI,
@@ -160,33 +204,7 @@ def _repair_with_error(
         return repaired
     raise TypeError(f"Unexpected repair output type: {type(repaired)}")
 
-# ---------------- Normalization guardrails ----------------
 
-def _normalize_result(obj: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Guardrail:
-    - If key_entities is a flat dict {name:desc}, convert to required arrays.
-    - Coerce difficulty to lowercase.
-    - Ensure required arrays exist.
-    """
-    ke = obj.get("key_entities")
-    if isinstance(ke, dict) and not {"people", "organizations", "locations"}.issubset(ke.keys()):
-        names = list(ke.keys())
-        obj["key_entities"] = {"people": names, "organizations": [], "locations": []}
-    elif ke is None:
-        obj["key_entities"] = {"people": [], "organizations": [], "locations": []}
-
-    if isinstance(obj.get("quiz"), list):
-        for q in obj["quiz"]:
-            if isinstance(q.get("difficulty"), str):
-                q["difficulty"] = q["difficulty"].strip().lower()
-
-    # Ensure lists exist
-    obj.setdefault("sections", [])
-    obj.setdefault("related_topics", [])
-    return obj
-
-# ---------------- Public API ----------------
 
 def generate_quiz_payload(
     article_title: str,
@@ -205,21 +223,33 @@ def generate_quiz_payload(
             "max_questions": max_questions
         })
 
-        if isinstance(result, BaseModel):
-            obj = result.model_dump()
-        elif isinstance(result, dict):
-            obj = result
-        else:
-            raise TypeError(f"Unexpected LLM parse output type: {type(result)}")
+        obj: Dict[str, Any] = result
 
+    except ResourceExhausted as e:
+        retry_after = None 
+        m = re.search(r"retry_delay\s*{\s*seconds:\s*(\d+)", str(e))
+        if m:
+            retry_after = int(m.group(1))
+        raise RateLimitError(retry_after=retry_after, message=str(e))
+
+        # if isinstance(result, BaseModel):
+        #     obj = result.model_dump()
+        # elif isinstance(result, dict):
+        #     obj = result
+        # else:
+        #     raise TypeError(f"Unexpected LLM parse output type: {type(result)}")
+
+    # except ValidationError as ve:
+    #     model = _get_model()
+    #     obj = _repair_with_error(
+    #         model, article_title, article_sections, article_text,
+    #         str(ve), min_questions, max_questions
+    #     )
     except ValidationError as ve:
-        model = _get_model()
-        obj = _repair_with_error(
-            model, article_title, article_sections, article_text,
-            str(ve), min_questions, max_questions
-        )
+        raise ve
+    except Exception as e:
+        raise e
 
     obj = _normalize_result(obj)
-    # Final strict validation
     QuizOutputModel.model_validate(obj)
     return obj

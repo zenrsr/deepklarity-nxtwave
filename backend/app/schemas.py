@@ -1,4 +1,3 @@
-# app/schemas.py
 from pydantic import BaseModel, AnyHttpUrl, Field, field_validator
 from typing import List, Literal
 
@@ -19,7 +18,6 @@ class QuizItem(BaseModel):
         return s
 
 class KeyEntities(BaseModel):
-    # ↓↓↓ add safe defaults so Pydantic never fails on missing keys
     people: List[str] = Field(default_factory=list)
     organizations: List[str] = Field(default_factory=list)
     locations: List[str] = Field(default_factory=list)
