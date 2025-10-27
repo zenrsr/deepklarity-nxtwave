@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { generateQuiz, listHistory } from '../api/api';
-import type { QuizMeta } from '../api/types';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { generateQuiz, getQuiz, listHistory } from '../api/api';
+import type { QuizMeta, QuizResponse } from '../api/types';
 import Spinner from '../components/Spinner';
 import { Button } from '@/components/ui/button';
+import QuizDisplay from '../components/QuizDisplay';
 
 function deriveFallbackTitle(url: string): string {
   try {
@@ -43,14 +43,6 @@ function formatHistoryUrl(url: string): string {
     return url;
   }
 }
-
-type HistoryGroup = {
-  key: string;
-  canonical: string;
-  items: QuizMeta[];
-  latest: QuizMeta;
-};
-
 function canonicalKey(url: string): string {
   try {
     const parsed = new URL(url);
@@ -67,6 +59,7 @@ function parseDate(date: string): number {
 }
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
   const [url, setUrl] = useState('https://en.wikipedia.org/wiki/World_Wide_Web');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -74,44 +67,28 @@ export default function Home() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [history, setHistory] = useState<QuizMeta[]>([]);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [regenKey, setRegenKey] = useState<string | null>(null);
-  const nav = useNavigate();
+  const [currentQuiz, setCurrentQuiz] = useState<QuizResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalQuiz, setModalQuiz] = useState<QuizResponse | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const urlDisabled = useMemo(() => !url.trim() || busy, [url, busy]);
-  const { historyGroups, historyLookup } = useMemo(() => {
-    const map = new Map<string, HistoryGroup>();
-
-    for (const item of history) {
+  const { sortedHistory, historyLookup } = useMemo(() => {
+    const sorted = [...history].sort(
+      (a, b) => parseDate(b.date_generated) - parseDate(a.date_generated),
+    );
+    const lookup = new Map<string, QuizMeta>();
+    for (const item of sorted) {
       const key = canonicalKey(item.url);
-      const existing = map.get(key);
-      if (!existing) {
-        map.set(key, {
-          key,
-          canonical: key,
-          items: [item],
-          latest: item,
-        });
-      } else {
-        existing.items.push(item);
-        if (parseDate(item.date_generated) > parseDate(existing.latest.date_generated)) {
-          existing.latest = item;
-        }
+      if (!lookup.has(key)) {
+        lookup.set(key, item);
       }
     }
-
-    const groups: HistoryGroup[] = Array.from(map.values()).map((group) => {
-      group.items.sort((a, b) => parseDate(b.date_generated) - parseDate(a.date_generated));
-      group.latest = group.items[0];
-      return group;
-    });
-
-    groups.sort(
-      (a: HistoryGroup, b: HistoryGroup) =>
-        parseDate(b.latest.date_generated) - parseDate(a.latest.date_generated),
-    );
-    const lookup = new Map(groups.map((g) => [g.key, g]));
-    return { historyGroups: groups, historyLookup: lookup };
+    return { sortedHistory: sorted, historyLookup: lookup };
   }, [history]);
 
   async function onGenerate(force = false, overrideUrl?: string) {
@@ -127,9 +104,10 @@ export default function Home() {
     if (!force) {
       const existing = historyLookup.get(key);
       if (existing) {
+        setActiveTab('generate');
         setFormError(null);
         setFormNotice('Opening saved quiz from history...');
-        nav(`/quiz/${existing.latest.id}`);
+        await showQuiz(existing.id);
         return;
       }
     }
@@ -139,7 +117,22 @@ export default function Home() {
     setFormNotice(force ? 'Generating a fresh quiz...' : null);
     try {
       const res = await generateQuiz({ url: candidate, force });
-      nav(`/quiz/${res.id}`);
+      setCurrentQuiz(res);
+      setActiveTab('generate');
+      setPreviewError(null);
+      setFormNotice('Quiz generated below.');
+      setHistory((prev) => {
+        const next = prev.filter((item) => item.id !== res.id);
+        return [
+          {
+            id: res.id,
+            url: res.url,
+            title: res.title,
+            date_generated: res.date_generated,
+          },
+          ...next,
+        ];
+      });
     } catch (e: any) {
       setFormError(e.message || 'Failed to generate quiz');
       setFormNotice(null);
@@ -148,13 +141,10 @@ export default function Home() {
     }
   }
 
-  function toggleGroup(key: string) {
-    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-
-  async function onRegenerate(urlToRegenerate: string, key: string) {
+  async function onRegenerate(urlToRegenerate: string, key: string | number) {
     if (regenKey) return;
-    setRegenKey(key);
+    const token = String(key);
+    setRegenKey(token);
     setFormError(null);
     setFormNotice(null);
     try {
@@ -176,6 +166,43 @@ export default function Home() {
       setHistoryLoading(false);
     }
   }
+
+  async function showQuiz(id: number) {
+    setActiveTab('generate');
+    setPreviewError(null);
+    setPreviewLoading(true);
+    try {
+      const res = await getQuiz(id);
+      setCurrentQuiz(res);
+      setFormNotice('Loaded quiz from history.');
+    } catch (e: any) {
+      setPreviewError(e.message || 'Unable to load quiz.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function openDetails(id: number) {
+    setModalOpen(true);
+    setModalQuiz(null);
+    setModalError(null);
+    setModalLoading(true);
+    try {
+      const res = await getQuiz(id);
+      setModalQuiz(res);
+    } catch (e: any) {
+      setModalError(e.message || 'Unable to load quiz details.');
+    } finally {
+      setModalLoading(false);
+    }
+  }
+
+  const closeModal = useCallback(() => {
+    setModalOpen(false);
+    setModalQuiz(null);
+    setModalError(null);
+    setModalLoading(false);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -199,6 +226,25 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!modalOpen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeModal();
+      }
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [modalOpen, closeModal]);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-4 pb-16 pt-12 sm:px-6 lg:px-8 lg:pt-16">
@@ -214,159 +260,236 @@ export default function Home() {
           </p>
         </header>
 
-        <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-lg ring-1 ring-slate-900/5 backdrop-blur-sm sm:p-8">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <label className="text-sm font-semibold tracking-wide text-slate-700">
-              Article URL
-            </label>
-            <span className="text-xs text-slate-500">
-              Supports public Wikipedia articles. Private or paywalled links are skipped.
-            </span>
-          </div>
+        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 p-1 text-sm font-semibold text-slate-600 shadow-sm">
+          <button
+            type="button"
+            className={[
+              'flex-1 rounded-full px-4 py-2 transition',
+              activeTab === 'generate'
+                ? 'bg-slate-900 text-white shadow'
+                : 'hover:bg-slate-100'
+            ].join(' ')}
+            onClick={() => setActiveTab('generate')}
+          >
+            Generate quiz
+          </button>
+          <button
+            type="button"
+            className={[
+              'flex-1 rounded-full px-4 py-2 transition',
+              activeTab === 'history'
+                ? 'bg-slate-900 text-white shadow'
+                : 'hover:bg-slate-100'
+            ].join(' ')}
+            onClick={() => setActiveTab('history')}
+          >
+            Past quizzes
+          </button>
+        </div>
 
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <input
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-800 shadow-inner transition focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100"
-              placeholder="https://en.wikipedia.org/wiki/Alan_Turing"
-              value={url}
-              onChange={(e) => {
-                setUrl(e.target.value);
-                setFormError(null);
-                setFormNotice(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  onGenerate();
-                }
-              }}
-              disabled={busy}
-              aria-invalid={Boolean(formError)}
-            />
-            <Button
-              className="h-full min-w-[160px] rounded-2xl bg-blue-600 px-5 py-3 text-base font-semibold text-black shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
-              onClick={() => onGenerate()}
-              disabled={urlDisabled}
-            >
-              {busy ? 'Generating...' : 'Generate quiz'}
-            </Button>
-          </div>
-
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            {formError && <div className="text-sm font-medium text-rose-600">{formError}</div>}
-            {formNotice && !busy && <div className="text-sm font-medium text-blue-600">{formNotice}</div>}
-            {busy && (
-              <div className="text-sm text-slate-500">
-                <Spinner label="Talking to backend..." />
+        {activeTab === 'generate' && (
+          <section className="flex flex-col gap-6">
+            <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-lg ring-1 ring-slate-900/5 backdrop-blur-sm sm:p-8">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <label className="text-sm font-semibold tracking-wide text-slate-700">
+                  Article URL
+                </label>
+                <span className="text-xs text-slate-500">
+                  Supports public Wikipedia articles. Private or paywalled links are skipped.
+                </span>
               </div>
-            )}
-          </div>
-        </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-lg ring-1 ring-slate-900/5 backdrop-blur-sm sm:p-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">Recent quizzes</h2>
-              <p className="text-sm text-slate-500">
-                Your last 10 generated quizzes stay cached for a few hours.
-              </p>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <input
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-800 shadow-inner transition focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100"
+                  placeholder="https://en.wikipedia.org/wiki/Alan_Turing"
+                  value={url}
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    setFormError(null);
+                    setFormNotice(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      onGenerate();
+                    }
+                  }}
+                  disabled={busy}
+                  aria-invalid={Boolean(formError)}
+                />
+                <Button
+                  className="h-full min-w-[160px] rounded-2xl bg-blue-600 px-5 py-3 text-base font-semibold text-black shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+                  onClick={() => onGenerate()}
+                  disabled={urlDisabled}
+                >
+                  {busy ? 'Generating...' : 'Generate quiz'}
+                </Button>
+              </div>
+
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                {formError && <div className="text-sm font-medium text-rose-600">{formError}</div>}
+                {formNotice && !busy && <div className="text-sm font-medium text-blue-600">{formNotice}</div>}
+                {(busy || previewLoading) && (
+                  <div className="text-sm text-slate-500">
+                    <Spinner label={busy ? 'Talking to backend...' : 'Loading quiz...'} />
+                  </div>
+                )}
+              </div>
+              {previewError && (
+                <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  {previewError}
+                </div>
+              )}
             </div>
-            <Button
-              variant="outline"
-              className="rounded-xl border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-              onClick={loadHistory}
-              disabled={historyLoading}
-            >
-              {historyLoading ? 'Refreshing...' : 'Refresh'}
-            </Button>
-          </div>
 
-          <div className="mt-6">
-            {historyError && <div className="text-sm text-rose-600">{historyError}</div>}
-            <ul className="grid gap-3 sm:grid-cols-2 sm:gap-4">
-              {historyGroups.map((group) => {
-                const latest = group.latest;
-                const versionCount = group.items.length;
-                const isExpanded = Boolean(expanded[group.key]);
-                return (
-                  <li
-                    key={group.key}
-                    className="flex flex-col justify-between rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
-                  >
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium uppercase tracking-wide text-slate-500">
-                        {latest.date_generated}
-                      </div>
-                      <div className="text-lg font-semibold text-slate-900">
-                        {formatHistoryTitle(latest.title, latest.url)}
-                      </div>
-                      <div className="text-xs text-slate-500 break-words">
-                        {formatHistoryUrl(latest.url)}
-                      </div>
-                      {versionCount > 1 && (
-                        <div className="text-xs text-slate-500">
-                          {versionCount - 1} earlier version{versionCount - 1 !== 1 ? 's' : ''}{' '}
-                          <button
-                            className="ml-1 font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900"
-                            onClick={() => toggleGroup(group.key)}
-                          >
-                            {isExpanded ? 'Hide details' : 'View versions'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <Button
-                        className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-black shadow-sm hover:bg-slate-700"
-                        onClick={() => nav(`/quiz/${latest.id}`)}
-                      >
-                        Open latest
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="rounded-xl border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
-                        disabled={regenKey === group.key || busy}
-                        onClick={() => onRegenerate(latest.url, group.key)}
-                      >
-                        {regenKey === group.key ? 'Regenerating...' : 'New questions'}
-                      </Button>
-                    </div>
-                    {isExpanded && versionCount > 1 && (
-                      <div className="mt-4 space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-4">
-                        {group.items.slice(1).map((item: QuizMeta) => (
-                          <div
-                            key={item.id}
-                            className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600"
-                          >
-                            <div className="font-medium text-slate-700">{item.date_generated}</div>
-                            <Button
-                              variant="ghost"
-                              className="self-start rounded-lg px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
-                              onClick={() => nav(`/quiz/${item.id}`)}
-                            >
-                              Open version
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-            {!historyLoading && historyGroups.length === 0 && !historyError && (
-              <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                No quizzes yet. Generate one to see it listed here.
+            {currentQuiz && (
+              <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-lg ring-1 ring-slate-900/5 backdrop-blur-sm sm:p-8">
+                <div className="mb-4 flex items-center justify-between gap-3 text-xs text-slate-500">
+                  <span className="font-semibold uppercase tracking-wide text-slate-600">
+                    Generated
+                  </span>
+                  <span className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-1 font-semibold text-slate-700">
+                    {new Date(currentQuiz.date_generated).toLocaleString()}
+                  </span>
+                </div>
+                <QuizDisplay payload={currentQuiz.full_quiz_data} />
               </div>
             )}
-            {historyLoading && (
-              <div className="mt-4 flex items-center text-sm text-slate-500">
-                <Spinner label="Loading recent quizzes..." />
+          </section>
+        )}
+
+        {activeTab === 'history' && (
+          <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-lg ring-1 ring-slate-900/5 backdrop-blur-sm sm:p-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">Recent quizzes</h2>
+                <p className="text-sm text-slate-500">
+                  View every quiz generated in this session. Details open the full structured quiz.
+                </p>
               </div>
-            )}
-          </div>
-        </section>
+              <Button
+                variant="outline"
+                className="rounded-xl border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                onClick={loadHistory}
+                disabled={historyLoading}
+              >
+                {historyLoading ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              {historyError && <div className="text-sm text-rose-600">{historyError}</div>}
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80">
+                <table className="w-full border-collapse text-left text-sm text-slate-600">
+                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th scope="col" className="px-4 py-3">ID</th>
+                      <th scope="col" className="px-4 py-3">Title</th>
+                      <th scope="col" className="px-4 py-3">Article</th>
+                      <th scope="col" className="px-4 py-3">Generated</th>
+                      <th scope="col" className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedHistory.map((item) => {
+                      const rowRegenerating = regenKey === String(item.id);
+                      return (
+                        <tr key={item.id} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs font-semibold text-slate-500">{item.id}</td>
+                          <td className="px-4 py-3 text-sm font-semibold text-slate-900">
+                            {formatHistoryTitle(item.title, item.url)}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {formatHistoryUrl(item.url)}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {new Date(item.date_generated.replace(' ', 'T')).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                className="rounded-xl border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"
+                                onClick={() => openDetails(item.id)}
+                                disabled={modalLoading}
+                              >
+                                Details
+                              </Button>
+                              <Button
+                                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-black shadow-sm hover:bg-slate-700"
+                                onClick={() => showQuiz(item.id)}
+                              >
+                                Open
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="rounded-xl px-3 py-2 text-xs font-semibold text-slate-700"
+                                disabled={Boolean(regenKey) || busy}
+                                onClick={() => onRegenerate(item.url, item.id)}
+                              >
+                                {rowRegenerating ? 'Regenerating...' : 'New questions'}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {!sortedHistory.length && !historyLoading && !historyError && (
+                  <div className="px-4 py-6 text-center text-sm text-slate-500">
+                    No quizzes yet. Generate one to see it listed here.
+                  </div>
+                )}
+              </div>
+
+              {historyLoading && (
+                <div className="flex items-center text-sm text-slate-500">
+                  <Spinner label="Loading recent quizzes..." />
+                </div>
+              )}
+            </div>
+          </section>
+        )}
       </div>
+
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl sm:p-8">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold text-slate-900">Quiz details</h3>
+              <Button
+                variant="ghost"
+                className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                onClick={closeModal}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="mt-4">
+              {modalLoading && (
+                <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                  <Spinner label="Fetching quiz..." />
+                </div>
+              )}
+              {modalError && !modalLoading && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {modalError}
+                </div>
+              )}
+              {modalQuiz && !modalLoading && !modalError && (
+                <QuizDisplay payload={modalQuiz.full_quiz_data} />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

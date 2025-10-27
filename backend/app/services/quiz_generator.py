@@ -1,4 +1,9 @@
+from __future__ import annotations
+
+import logging
+import re
 from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -6,6 +11,15 @@ from langchain_core.runnables import RunnableSequence
 from langchain_google_genai import ChatGoogleGenerativeAI
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from app.core.config import settings
+from app.services.fallback_quiz import generate_rule_based_quiz
+
+try:
+    from google.api_core.exceptions import ResourceExhausted  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover
+    class ResourceExhausted(Exception):
+        """Shallow stand-in when google core is unavailable."""
+
+logger = logging.getLogger(__name__)
 
 class RateLimitError(Exception):
     def __init__(self, retry_after: int | None = None, message: str = "Rate limited"):
@@ -206,50 +220,88 @@ def _repair_with_error(
 
 
 
+def _invoke_primary_model(
+    article_title: str,
+    article_sections: list[str],
+    article_text: str,
+    min_questions: int,
+    max_questions: int,
+) -> Dict[str, Any]:
+    chain = build_chain()
+    try:
+        result = chain.invoke(
+            {
+                "article_title": article_title,
+                "article_sections": article_sections,
+                "article_text": article_text,
+                "min_questions": min_questions,
+                "max_questions": max_questions,
+            }
+        )
+    except ResourceExhausted as exc:
+        retry_after = None
+        match = re.search(r"retry_delay\s*{\s*seconds:\s*(\d+)", str(exc))
+        if match:
+            retry_after = int(match.group(1))
+        raise RateLimitError(retry_after=retry_after, message=str(exc)) from exc
+
+    if isinstance(result, BaseModel):
+        obj: Dict[str, Any] = result.model_dump()
+    elif isinstance(result, dict):
+        obj = result
+    else:
+        raise TypeError(f"Unexpected LLM parse output type: {type(result)}")
+    return obj
+
+
 def generate_quiz_payload(
     article_title: str,
     article_sections: list[str],
     article_text: str,
     min_questions: int = 5,
-    max_questions: int = 10
+    max_questions: int = 10,
 ) -> Dict[str, Any]:
-    chain = build_chain()
     try:
-        result = chain.invoke({
-            "article_title": article_title,
-            "article_sections": article_sections,
-            "article_text": article_text,
-            "min_questions": min_questions,
-            "max_questions": max_questions
-        })
-
-        obj: Dict[str, Any] = result
-
-    except ResourceExhausted as e:
-        retry_after = None 
-        m = re.search(r"retry_delay\s*{\s*seconds:\s*(\d+)", str(e))
-        if m:
-            retry_after = int(m.group(1))
-        raise RateLimitError(retry_after=retry_after, message=str(e))
-
-        # if isinstance(result, BaseModel):
-        #     obj = result.model_dump()
-        # elif isinstance(result, dict):
-        #     obj = result
-        # else:
-        #     raise TypeError(f"Unexpected LLM parse output type: {type(result)}")
-
-    # except ValidationError as ve:
-    #     model = _get_model()
-    #     obj = _repair_with_error(
-    #         model, article_title, article_sections, article_text,
-    #         str(ve), min_questions, max_questions
-    #     )
+        obj = _invoke_primary_model(
+            article_title,
+            article_sections,
+            article_text,
+            min_questions,
+            max_questions,
+        )
+    except RateLimitError as exc:
+        logger.warning(
+            "Primary model rate limited (retry_after=%s). Switching to fallback.", exc.retry_after
+        )
+        obj = {}
+    except ResourceExhausted as exc:
+        retry_after = None
+        match = re.search(r"retry_delay\s*{\s*seconds:\s*(\d+)", str(exc))
+        if match:
+            retry_after = int(match.group(1))
+        logger.warning(
+            "Gemini rate limit reached (retry_after=%s). Using fallback generator.", retry_after
+        )
+        obj = {}
     except ValidationError as ve:
-        raise ve
-    except Exception as e:
-        raise e
+        logger.error("Primary model validation failed: %s", ve)
+        obj = {}
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Primary model failed; using fallback generator: %s", exc)
+        obj = {}
 
-    obj = _normalize_result(obj)
-    QuizOutputModel.model_validate(obj)
-    return obj
+    if obj:
+        obj = _normalize_result(obj)
+        QuizOutputModel.model_validate(obj)
+        return obj
+
+    fallback = generate_rule_based_quiz(
+        article_title,
+        article_sections,
+        article_text,
+        min_questions=min_questions,
+        max_questions=max_questions,
+    )
+    fallback = _normalize_result(fallback)
+    QuizOutputModel.model_validate(fallback)
+    return fallback

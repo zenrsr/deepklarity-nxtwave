@@ -1,10 +1,17 @@
-# app/core/config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 from typing import List, Union
+from pathlib import Path
+from dotenv import load_dotenv
+
+# The root of the backend directory
+BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Load the .env file
+load_dotenv(dotenv_path=BACKEND_ROOT / ".env")
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
+    model_config = SettingsConfigDict(env_file_encoding="utf-8", extra="ignore")
 
     APP_NAME: str = "ai-quiz-backend"
     APP_ENV: str = "development"
@@ -14,7 +21,7 @@ class Settings(BaseSettings):
 
     ALLOWED_ORIGINS: Union[str, List[str]] = ["http://localhost:5173", "http://localhost:3000"]
 
-    DATABASE_URL: str = "sqlite+aiosqlite:///./dev.db"
+    DATABASE_URL: str
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-1.5-flash-8b" 
 

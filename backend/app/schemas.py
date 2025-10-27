@@ -1,4 +1,4 @@
-from pydantic import BaseModel, AnyHttpUrl, Field, field_validator
+from pydantic import BaseModel, AnyHttpUrl, Field, field_validator, model_validator
 from typing import List, Literal
 
 class QuizItem(BaseModel):
@@ -47,6 +47,16 @@ class QuizResponse(BaseModel):
 class GenerateQuizRequest(BaseModel):
     url: AnyHttpUrl
     force: bool = False
+    min_questions: int | None = Field(default=None, ge=1, le=20)
+    max_questions: int | None = Field(default=None, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def check_question_bounds(cls, values: "GenerateQuizRequest"):
+        min_q = values.min_questions
+        max_q = values.max_questions
+        if min_q is not None and max_q is not None and min_q > max_q:
+            raise ValueError("min_questions cannot exceed max_questions")
+        return values
 
 class HistoryResponse(BaseModel):
     items: List[QuizMeta]

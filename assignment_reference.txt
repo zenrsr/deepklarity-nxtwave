@@ -1,0 +1,220 @@
+
+--- Page 1 ---
+
+D e e p K l a r i t y  A s s i g n m e n t  
+R e f e r e n c e  D o c u m e n t
+A I  W i k i  Q u i z  G e n e r a t o r
+1 .  O b j e c t i v e
+The pr imar y go al of this pr oject is t o cr e at e a full-st ack applic ation that le v erages  
+AI t o transf or m unstructur ed t e x t fr om a Wikipedia ar ticle int o a structur ed,  
+engaging, and educ ational quiz.
+Cor e F unctionalit y:
+ Input:  Accept a Wikipedia URL fr om a user .
+ Pr ocess:  Scrape the ar ticle, use a Lar ge Language Model LLM via  
+LangChain/Gemini t o generat e a quiz 510 questions), and e x tract summar y  
+inf or mation.
+ St or age:  P ersist the or iginal URL, scraped cont ent, and the generat ed quiz  
+dat a in an MYSQL or POST GRESQL dat ab ase.
+ Output:  Displa y the quiz immediat el y af t er generation and allo w users t o vie w  
+a hist or y of all generat ed quizz es.
+2 .  T e c h n i c a l  R e q u i r e m e n t s
+T o successfull y e x ecut e this pr oject, y ou will need the f ollo wing t ools and librar ies:
+Cat egor y Component Pur pose Inst allation/Not es
+Back end
+Py t hon)Py t hon 3 . 10Cor e pr ogramming
+language.R equir ed en vir onment
+F astAPIHigh-per f or mance,
+e asy -t o-use Py thon
+w eb frame w or k f or the
+API.p i p  i n s t a l l  f a s t a p i  u v i c o r n
+DeepKlar it y Assignment R ef er ence Document
+1
+--- Page 2 ---
+
+Cat egor y Component Pur pose Inst allation/Not es
+Be autifulSoup4Librar y f or p arsing
+HTML and e x tracting
+dat a (scraping).p i p  i n s t a l l  b e a u t i f u l s o u p 4
+r e q u e s t s
+LangChainF rame w or k f or
+de v eloping
+applic ations po w er ed
+b y LLMs.p i p  i n s t a l l  l a n g c h a i n - c o r e
+l a n g c h a i n - c o m m u n i t y  p y d a n t i c
+Py danticDat a v alidation and
+set tings management
+(buil t int o F astAPI.Included with F astAPI
+LLM A ccessGemini F r ee Tier
+APIThe Lar ge Language
+Model used f or quiz
+generation.Set up a vir tual
+en vir onment and use the
+LangChain int egration
+( l a n g c h a i n - g o o g l e - g e n a i ).
+F r ont end (W eb ) R e actJa v aScr ipt librar y f or
+building the user
+int er f ace.R equir es Node.js and
+npm/y ar n f or R e act t ooling
+(but the b ack end is str ictl y
+Py thon).
+T ailwind CSSUtilit y -first CSS
+frame w or k f or cle an,
+minimal UI design.Int egrat e int o the R e act
+build pr ocess.
+Dat ab aseMYSQL or
+POST GRESQLSimple, file-b ased
+dat ab ase f or dat a
+st orage.
+NO TE  The use of Node.js  f or the b ack end or an y cor e API functionalit y is str ictl y  
+pr ohibit ed and will r esul t in r ejection. The b ack end must  be implement ed using  
+Py thon F astAPI/Django ) as specified in the T echnic al R equir ement s.
+3 .  S t e p - b y - S t e p  I n s t r u c t i o n s
+F ollo w these st eps sequentiall y t o build y our applic ation.
+P h a s e  1 :  E n v i r o n m e n t  a n d  B a c k e n d  S e t u p
+S t e p  1 :  P r o j e c t  S t r u c t u r e  &  P y t h o n  E n v i r o n m e n t
+DeepKlar it y Assignment R ef er ence Document
+2
+--- Page 3 ---
+
+ Cr e at e Pr oject Dir ect or ies:  Mak e a main f older ( a i - q u i z - g e n e r a t o r ) and t w o  
+subf olders: b a c k e n d  and f r o n t e n d .
+ Cr e at e Vir tual En vir onment:  Na vigat e int o the b a c k e n d  f older and cr e at e a  
+Py thon vir tual en vir onment:
+p y thon -m v en v v en v
+sour ce v en v /bin/activ at e  # On Windo ws: v en v\Scr ipt s \activ at e
+ Inst all Back end Dependencies:  Inst all the r equir ed Py thon librar ies:
+pip inst all f ast api uvicor n[st andar d] sqlalchem y be autifulsoup4 r equest s p
+y dantic langchain-cor e langchain-communit y p y thon-dot en v langchain-g
+oogle-genai
+ API K e y Setup Optional/Loc al ):  Cr e at e a file named . e n v  in the b a c k e n d  f older  
+t o st or e y our Gemini API k e y:
+GEMINI_API_ KEY "Y OUR_API_ KEY_ HERE"
+S t e p  2 :  D a t a b a s e  ( M Y S Q L  o r  P O S T G R E S Q L )  S e t u p
+ Def ine Dat ab ase Connection:  Cr e at e a file named d a t a b a s e . p y . Define the  
+SQLAlchem y engine pointing t o an MYSQL or POST GRESQL file  
+( . / q u i z _ h i s t o r y . d b ).
+ Def ine Base Class:  Cr e at e a declarativ e b ase class f or y our models.
+ Def ine t he Q u i z  Model:  Cr e at e a Q u i z  class that inher it s fr om the b ase. I t must  
+include fields f or:
+i d  Pr imar y K e y)
+u r l  Str ing)
+t i t l e  Str ing)
+d a t e _ g e n e r a t e d  Dat e Time )
+s c r a p e d _ c o n t e n t  T e x t - f or Bonus)
+DeepKlar it y Assignment R ef er ence Document
+3
+--- Page 4 ---
+
+f u l l _ q u i z _ d a t a  T e x t/ JSON  CRUCIAL  Use a T e x t field t o st or e the comple x  
+JSON structur e of the quiz, k e y entities, and r elat ed t opics af t er  
+ser ialization using j s o n . d u m p s ( ) ).
+S t e p  3 :  W i k i p e d i a  S c r a p e r
+ Cr e at e Scr aper File:  Cr e at e s c r a p e r . p y .
+ Implement s c r a p e _ w i k i p e d i a ( u r l ) :  Use r e q u e s t s  t o f et ch the URL cont ent and 
+B e a u t i f u l S o u p  t o p arse it.
+ Cle an Cont ent:  Identify the main ar ticle bod y ( e.g., using kno wn Wikipedia  
+CSS classes or IDs lik e # m w - c o n t e n t - t e x t ). Str ip out boiler plat e, r ef er ence links  
+( s u p  t ags), and t ables t o pr o vide a cle an t e x t input f or the LLM. R etur n the  
+cle an t e x t and the ar ticle title.
+P h a s e  2 :  A I  I n t e g r a t i o n  a n d  A P I  E n d p o i n t s
+S t e p  4 :  L L M  I n t e g r a t i o n  ( L a n g C h a i n / P y d a n t i c )
+ Def ine Py dantic Schema:  In m o d e l s . p y , define the str ict JSON structur e the  
+LLM must r etur n. See Example Code D f or snippet).
+ Setup LLM Gener at or:  In l l m _ q u i z _ g e n e r a t o r . p y :
+Initializ e the Gemini model ( e.g., g e m i n i - 2 . 5 - f l a s h ) using l a n g c h a i n - g o o g l e - g e n a i .
+Define a det ailed Pr ompt T emplat e  that includes placeholders f or the  
+ar ticle t e x t and the f or mat instructions.
+Use LangChain's J s o n O u t p u t P a r s e r  t o enf or ce the Py dantic schema, ensur ing  
+the model r etur ns v alid JSON.
+Cr e at e a chain combining the pr ompt, the model, and the p arser .
+S t e p  5 :  F a s t A P I  B a c k e n d  E n d p o i n t s
+ Setup m a i n . p y :  Initializ e the F astAPI app and set up CORS middle war e t o allo w  
+the R e act fr ont end t o communic at e See Example Code A f or snippet).
+ Endpoint 1 / g e n e r a t e _ q u i z  POST :
+Accept s a JSON bod y with the u r l .
+DeepKlar it y Assignment R ef er ence Document
+4
+--- Page 5 ---
+
+Calls s c r a p e _ w i k i p e d i a .
+Calls the LLM generation chain.
+Sa v es the dat a (ser ializing the quiz JSON t o a str ing) int o the MYSQL or  
+POST GRESQL dat ab ase.
+R etur ns the full JSON dat a of the generat ed quiz.
+ Endpoint 2 / h i s t o r y  GET :
+Quer ies the dat ab ase f or a list of all sa v ed quizz es.
+R etur ns a simple list of object s cont aining i d , u r l , t i t l e , and d a t e _ g e n e r a t e d .
+ Endpoint 3 / q u i z / { q u i z _ i d }  GET :
+F et ches a specific quiz r ecor d b y i d .
+Crucial:  Deser ializ e the f u l l _ q u i z _ d a t a  t e x t field b ack int o a Py thon  
+dictionar y / JSON object bef or e r etur ning it in the r esponse.
+P h a s e  3 :  F r o n t e n d  ( R e a c t )  D e v e l o p m e n t
+S t e p  6 :  R e a c t  S e t u p  a n d  C o m p o n e n t  S t r u c t u r e
+ Setup R e act/T ailwind:  Initializ e y our R e act app ( e.g., using v i t e ) and  
+inst all/configur e T ailwind CSS.
+ Cor e Component s:
+A p p . j s x  Manages the applic ation st at e ( e.g., a c t i v e T a b ).
+G e n e r a t e Q u i z T a b . j s x  Cont ains the URL input f or m, lo ading st at e, and displa ys  
+the r esul t.
+H i s t o r y T a b . j s x  F et ches and displa ys the hist or y t able.
+Q u i z D i s p l a y . j s x  A r eusable component t o r ender the full structur ed quiz dat a  
+(used in T ab 1 and the Hist or y modal).
+M o d a l . j s x  Gener ic modal component.
+S t e p  7 :  F r o n t e n d  I n t e g r a t i o n  a n d  U I
+DeepKlar it y Assignment R ef er ence Document
+5
+--- Page 6 ---
+
+ API Ser vice:  Cr e at e a ser vice file ( e.g., a p i . j s ) t o handle all f e t c h  r equest s t o the  
+F astAPI b ack end.
+ T ab 1  Gener at e Quiz:
+Implement input v alidation f or the URL.
+Displa y a visuall y cle ar lo ading st at e (spinner or message ) while the  
+b ack end pr ocesses.
+Use the Q u i z D i s p l a y  component t o r ender the r esul t in c ar d-b ased la y out.
+ T ab 2  Hist or y:
+R ender a t able listing ID , URL, and Title.
+Implement a "Det ails" but t on f or e ach r o w that:
+F et ches the specific quiz dat a via the / q u i z / { q u i z _ i d }  endpoint.
+Opens a modal and p asses the dat a t o the r eusable Q u i z D i s p l a y  
+component inside the modal.
+4 .  P r o j e c t  S t r u c t u r e
+ai-quiz-generat or /
+├──  b ack end/
+│    ├──  v en v /                       # Py thon Vir tual En vir onment
+│    ├──  dat ab ase.p y                 # SQLAlchem y setup and Quiz model
+│    ├──  models.p y                   # Py dantic Schemas f or LLM output QuizOutpu
+t)
+│    ├──  scraper .p y                  # F unctions f or f et ching and cle aning Wikipedia  
+HTML
+│    ├──  llm_quiz_generat or .p y       # LangChain setup, pr ompt t emplat es, and  
+chain logic
+│    ├──  main.p y                     # F astAPI applic ation and API endpoint s
+│    ├──  r equir ement s.tx t            # List of all Py thon dependencies
+│    └──  .en v                        # API k e ys and en vir onment v ar iables
+|
+├──  fr ont end/
+│    ├──  sr c/
+DeepKlar it y Assignment R ef er ence Document
+6
+--- Page 7 ---
+
+│    │    ├──  component s/             # R eusable UI p ar t s ( e.g., QuizCar d, T abBut t o
+n, Modal)
+│    │    │    ├──  QuizDispla y .jsx     # R eusable component f or r ender ing generat
+ed quiz dat a
+│    │    │    └──  Hist or y T able.jsx
+│    │    ├──  ser vices/
+│    │    │    └──  api.js              # F unctions f or communic ating with the F astAPI b
+ack end
+│    │    ├──  t abs/
+│    │    │    ├──  Generat eQuiz T ab.jsx
+│    │    │    └──  Hist or y T ab.jsx
+│    │    ├──  App.jsx                 # Main R e act component, handles t ab swit ching
+│    │    └──  inde x.css               # T ailwind dir ectiv es and cust om st y les
+│    ├──  p ackage.json
+|
+└──  README.md                       # Pr oject Setup, Endpoint s, and T esting Instruc
+tions
+DeepKlar it y Assignment R ef er ence Document
+7

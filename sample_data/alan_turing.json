@@ -1,0 +1,96 @@
+{
+  "id": 88,
+  "url": "https://en.wikipedia.org/wiki/Alan_Turing",
+  "title": "Alan Turing",
+  "date_generated": "2025-02-08T15:21:03Z",
+  "full_quiz_data": {
+    "title": "Alan Turing",
+    "summary": "Alan Turing was a British mathematician whose work on computation and codebreaking laid the groundwork for modern computer science and artificial intelligence.",
+    "key_entities": {
+      "people": ["Alan Turing", "Joan Clarke"],
+      "organizations": ["Bletchley Park", "University of Cambridge"],
+      "locations": ["London", "Princeton"]
+    },
+    "sections": [
+      "Early life and education",
+      "Cryptanalysis",
+      "Computing and ACE",
+      "Prosecution and death",
+      "Legacy"
+    ],
+    "quiz": [
+      {
+        "question": "Which wartime project is Alan Turing most closely associated with?",
+        "options": [
+          "Manhattan Project",
+          "Project Ultra",
+          "Apollo Program",
+          "Project Camelot"
+        ],
+        "answer": "Project Ultra",
+        "difficulty": "medium",
+        "explanation": "The cryptanalysis section details Turing's central role in Project Ultra at Bletchley Park to break Enigma codes.",
+        "evidence_span": "At Bletchley Park, Turing played a pivotal role in the Ultra intelligence project that decrypted the German Enigma."
+      },
+      {
+        "question": "What test did Alan Turing propose for assessing machine intelligence?",
+        "options": [
+          "Voight-Kampff test",
+          "Turing test",
+          "Imitation game",
+          "Loebner prize"
+        ],
+        "answer": "Turing test",
+        "difficulty": "easy",
+        "explanation": "The article states that Turing's 1950 paper proposed the imitation game, now called the Turing test.",
+        "evidence_span": "In his paper \"Computing Machinery and Intelligence\", Turing posed the question, \"Can machines think?\" via the Imitation Game."
+      },
+      {
+        "question": "Which university awarded Turing a fellowship for his work on computable numbers?",
+        "options": [
+          "Harvard University",
+          "University of Cambridge",
+          "University of Manchester",
+          "MIT"
+        ],
+        "answer": "University of Cambridge",
+        "difficulty": "medium",
+        "explanation": "Cambridge awarded Turing a fellowship after his groundbreaking 1936 paper on computable numbers.",
+        "evidence_span": "In 1938 Turing was elected a fellow of King's College, Cambridge for his work on computable numbers."
+      },
+      {
+        "question": "What sentence was Alan Turing given after his 1952 conviction?",
+        "options": [
+          "Prison term",
+          "Chemical castration",
+          "Exile",
+          "Public apology"
+        ],
+        "answer": "Chemical castration",
+        "difficulty": "hard",
+        "explanation": "The article reports that Turing accepted hormonal treatment (chemical castration) instead of prison following his conviction.",
+        "evidence_span": "He accepted probation and hormone treatment designed to reduce libido (chemical castration)."
+      },
+      {
+        "question": "Which modern honor was posthumously granted to Alan Turing in 2013?",
+        "options": [
+          "Presidential Medal of Freedom",
+          "Royal Pardon",
+          "Order of Merit",
+          "Nobel Prize"
+        ],
+        "answer": "Royal Pardon",
+        "difficulty": "medium",
+        "explanation": "The legacy section notes that Queen Elizabeth II granted Turing a posthumous royal pardon in 2013.",
+        "evidence_span": "In 2013, Queen Elizabeth II granted Turing a posthumous pardon for his conviction."
+      }
+    ],
+    "related_topics": [
+      "Enigma machine",
+      "Computability theory",
+      "Artificial intelligence",
+      "Cryptanalysis"
+    ],
+    "notes": null
+  }
+}

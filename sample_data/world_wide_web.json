@@ -1,0 +1,95 @@
+{
+  "id": 101,
+  "url": "https://en.wikipedia.org/wiki/World_Wide_Web",
+  "title": "World Wide Web",
+  "date_generated": "2025-02-10T09:32:15Z",
+  "full_quiz_data": {
+    "title": "World Wide Web",
+    "summary": "The World Wide Web is a global information system that uses the internet to retrieve and display linked documents via browsers.",
+    "key_entities": {
+      "people": ["Tim Berners-Lee", "Robert Cailliau"],
+      "organizations": ["CERN", "World Wide Web Consortium"],
+      "locations": ["Geneva", "Switzerland"]
+    },
+    "sections": [
+      "Origins",
+      "Standardization",
+      "Web 2.0",
+      "Future developments"
+    ],
+    "quiz": [
+      {
+        "question": "Who is credited with inventing the World Wide Web?",
+        "options": [
+          "Bill Gates",
+          "Tim Berners-Lee",
+          "Vint Cerf",
+          "Ada Lovelace"
+        ],
+        "answer": "Tim Berners-Lee",
+        "difficulty": "easy",
+        "explanation": "The article states that Tim Berners-Lee proposed and built the first web system at CERN in 1989-1990.",
+        "evidence_span": "Tim Berners-Lee, a British scientist, invented the World Wide Web in 1989 while working at CERN."
+      },
+      {
+        "question": "Which organization oversees many of the web's technical standards today?",
+        "options": [
+          "ISO",
+          "IEEE",
+          "World Wide Web Consortium",
+          "Internet Governance Forum"
+        ],
+        "answer": "World Wide Web Consortium",
+        "difficulty": "medium",
+        "explanation": "The article notes that the World Wide Web Consortium (W3C) leads web standardization efforts under Berners-Lee.",
+        "evidence_span": "The World Wide Web Consortium (W3C) leads the World Wide Web to its full potential by developing protocols and guidelines."
+      },
+      {
+        "question": "What concept describes the participatory shift highlighted in the mid-2000s web?",
+        "options": [
+          "Web 2.0",
+          "Semantic Web",
+          "Web Assembly",
+          "Internet of Things"
+        ],
+        "answer": "Web 2.0",
+        "difficulty": "medium",
+        "explanation": "The 'Web 2.0' section covers the move toward user-generated content and social platforms.",
+        "evidence_span": "The term Web 2.0 was popularized by Tim O'Reilly to describe sites emphasizing user-generated content."
+      },
+      {
+        "question": "Which early goal motivated the creation of the first web prototypes at CERN?",
+        "options": [
+          "Selling scientific publications",
+          "Linking documents for researchers",
+          "Streaming multimedia",
+          "Building online marketplaces"
+        ],
+        "answer": "Linking documents for researchers",
+        "difficulty": "hard",
+        "explanation": "The article explains that Berners-Lee wanted to help CERN researchers share documentation easily across computer systems.",
+        "evidence_span": "Berners-Lee imagined a global hypertext system to help CERN researchers share information."
+      },
+      {
+        "question": "What is one proposed direction for the future development of the web mentioned in the article?",
+        "options": [
+          "Return to dial-up networks",
+          "Semantic Web",
+          "Exclusive proprietary browsers",
+          "Full decentralization ban"
+        ],
+        "answer": "Semantic Web",
+        "difficulty": "hard",
+        "explanation": "The 'Future developments' section references the semantic web vision where data is machine-readable.",
+        "evidence_span": "The Semantic Web is an extension of the Web that gives data well-defined meaning, enabling better cooperation between computers and people."
+      }
+    ],
+    "related_topics": [
+      "Hypertext",
+      "Internet",
+      "Browser",
+      "HTML"
+    ],
+    "notes": null
+  }
+}

@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.db.models import Quiz
 from app.utils.hash import sha256_hex
 from typing import Optional
@@ -13,10 +13,12 @@ async def get_quiz_by_urlhash_and_contenthash(db: AsyncSession, url_hash: str, c
     return res.scalar_one_or_none()
 
 async def list_quizzes(db: AsyncSession, skip: int = 0, limit: int = 50):
-    res = await db.execute(select(Quiz).order_by(Quiz.id.desc()).offset(skip).limit(limit))
+    total = await db.scalar(select(func.count()).select_from(Quiz))
+    res = await db.execute(
+        select(Quiz).order_by(Quiz.id.desc()).offset(skip).limit(limit)
+    )
     items = res.scalars().all()
-    total = (await db.execute(select(Quiz))).scalars().all()
-    return items, len(total)
+    return items, int(total or 0)
 
 async def create_quiz(db: AsyncSession, *, url: str, title: str, scraped_content: str | None, content_hash: str, etag: str | None, last_modified: str | None, full_quiz_data: dict) -> Quiz:
     q = Quiz(

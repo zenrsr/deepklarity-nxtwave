@@ -62,6 +62,20 @@ export type GradeResponse = {
 const BASE =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://127.0.0.1:8000';
 
+function normalizeTimeout(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const DEFAULT_TIMEOUT_MS = normalizeTimeout(
+  import.meta.env['VITE_REQUEST_TIMEOUT_MS'] as string | undefined,
+  30000,
+);
+const GENERATE_TIMEOUT_MS = normalizeTimeout(
+  import.meta.env['VITE_GENERATE_TIMEOUT_MS'] as string | undefined,
+  Math.max(DEFAULT_TIMEOUT_MS, 90000),
+);
+
 type HttpMethod = "GET" | "POST";
 
 async function sleep(ms: number) {
@@ -76,7 +90,7 @@ async function request<T>(
 ): Promise<T> {
   const url = `${BASE}${path}`;
   const retries = opts?.retries ?? 3;
-  const timeoutMs = opts?.timeoutMs ?? 30000;
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   let attempt = 0;
   let backoff = 500;
@@ -112,6 +126,16 @@ async function request<T>(
       throw new Error(`HTTP ${res.status}: ${text}`);
     } catch (err: any) {
       clearTimeout(timer);
+
+      const message = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
+      const isAbortError = err?.name === 'AbortError' || message.includes('aborted');
+
+      if (isAbortError) {
+        throw new Error(
+          `Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Please try again.`,
+        );
+      }
+
       if (attempt <= retries) {
         await sleep(backoff);
         backoff = Math.min(backoff * 2, 8000);
@@ -122,13 +146,6 @@ async function request<T>(
   }
 }
 
-
-export async function checkGeminiKey() {
-  return request<{ ok: boolean; model?: string; sample?: string; error?: string }>(
-    '/check_gemini_key',
-    'GET',
-  );
-}
 
 export async function listHistory(page = 1, pageSize = 10) {
   const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
@@ -141,7 +158,7 @@ export async function generateQuiz(req: GenerateQuizRequest) {
     '/generate_quiz',
     'POST',
     { url, force, min_questions: minQuestions, max_questions: maxQuestions },
-    { retries: 4 },
+    { retries: 4, timeoutMs: GENERATE_TIMEOUT_MS },
   );
 }
 

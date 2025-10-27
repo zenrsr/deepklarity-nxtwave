@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ResultSummary from '../components/ResultSummary';
+import QuizDisplay from '../components/QuizDisplay';
 import type { GradeResponse, QuizResponse } from '../api/types';
 import Spinner from '../components/Spinner';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,10 @@ export default function Results() {
             {Math.round(result.score)}%)
           </div>
         </header>
+
+        <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-lg ring-1 ring-slate-900/5 backdrop-blur-sm sm:p-8">
+          <QuizDisplay payload={quiz.full_quiz_data} />
+        </div>
 
         <ResultSummary result={result} questions={quiz.full_quiz_data.quiz} />
 

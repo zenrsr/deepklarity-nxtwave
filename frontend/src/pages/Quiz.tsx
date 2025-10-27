@@ -296,7 +296,7 @@ export default function Quiz() {
               </Button>
             )}
             <Button
-              className="rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+              className="rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-black shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
               onClick={skipPrompt ? onConfirmSkip : onSubmit}
               disabled={busy}
             >

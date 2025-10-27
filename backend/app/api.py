@@ -2,15 +2,26 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, AnyHttpUrl, Field
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.cache.storage import QUIZ_STORE
+from app.db import crud
+from app.db.session import get_session
+from app.db.models import Quiz
 from app.services.scraper import fetch_wikipedia 
 from app.services.quiz_generator import generate_quiz_payload
+from app.utils.hash import sha256_hex
 import asyncio
+from app.schemas import (
+    GenerateQuizRequest,
+    HistoryResponse,
+    QuizMeta,
+    QuizPayload,
+    QuizResponse,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -18,51 +29,6 @@ router = APIRouter()
 LLM_CONCURRENCY = int(1)
 _llm_sem = asyncio.Semaphore(LLM_CONCURRENCY)
 
-
-
-class GenerateQuizRequest(BaseModel):
-    url: AnyHttpUrl
-    force: bool = False
-
-
-class QuizMeta(BaseModel):
-    id: int
-    url: AnyHttpUrl
-    title: str
-    date_generated: str
-
-
-class QuizItem(BaseModel):
-    question: str
-    options: List[str] = Field(min_length=4, max_length=4)
-    answer: str
-    difficulty: str
-    explanation: str
-    evidence_span: str
-
-
-class KeyEntities(BaseModel):
-    people: List[str]
-    organizations: List[str]
-    locations: List[str]
-
-
-class QuizPayload(BaseModel):
-    title: str
-    summary: str
-    key_entities: KeyEntities
-    sections: List[str]
-    quiz: List[QuizItem] = Field(min_length=1)
-    related_topics: List[str]
-    notes: Optional[str] = None
-
-
-class QuizResponse(BaseModel):
-    id: int
-    url: AnyHttpUrl
-    title: str
-    date_generated: str
-    full_quiz_data: QuizPayload
 
 
 class GradeRequest(BaseModel):
@@ -130,6 +96,34 @@ def _normalize_payload(obj: Dict[str, Any]) -> Dict[str, Any]:
     return obj
 
 
+def _format_timestamp(value: Any) -> str:
+    if isinstance(value, dt.datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return _now_str()
+
+
+def _quiz_to_response(model: Quiz) -> QuizResponse:
+    payload = QuizPayload.model_validate(model.full_quiz_data)
+    return QuizResponse(
+        id=model.id,
+        url=model.url,
+        title=model.title,
+        date_generated=_format_timestamp(model.date_generated),
+        full_quiz_data=payload,
+    )
+
+
+def _quiz_to_meta(model: Quiz) -> QuizMeta:
+    return QuizMeta(
+        id=model.id,
+        url=model.url,
+        title=model.title,
+        date_generated=_format_timestamp(model.date_generated),
+    )
+
+
 
 @router.get("/health")
 async def health() -> Dict[str, str]:
@@ -137,87 +131,111 @@ async def health() -> Dict[str, str]:
 
 
 @router.post("/generate_quiz", response_model=QuizResponse, status_code=201)
-async def generate_quiz(req: GenerateQuizRequest) -> QuizResponse:
+async def generate_quiz(
+    req: GenerateQuizRequest,
+    db: AsyncSession = Depends(get_session),
+) -> QuizResponse:
     """
-    Generate a quiz from a Wikipedia article URL, store in memory, and return payload.
+    Generate a quiz from a Wikipedia article URL, persist it, and return payload.
     """
+    url = str(req.url)
+
     try:
-        title, sections, text = await fetch_wikipedia(str(req.url))
+        title, sections, text = await fetch_wikipedia(url)
     except Exception as e:
         log.exception("scrape failed")
         raise HTTPException(status_code=502, detail=f"Failed to fetch article: {e}")
 
+    article_text = text or ""
+    content_hash = sha256_hex(article_text)
+    url_hash = sha256_hex(url)
+
+    if not req.force:
+        existing = await crud.get_quiz_by_urlhash_and_contenthash(db, url_hash, content_hash)
+        if existing:
+            log.info("Returning cached quiz for URL %s (id=%s)", url, existing.id)
+            return _quiz_to_response(existing)
+
+    min_questions = req.min_questions or 7
+    max_questions = req.max_questions if req.max_questions is not None else max(min_questions, 10)
+
     try:
-        raw = generate_quiz_payload(title, sections, text, min_questions=7, max_questions=10)
+        async with _llm_sem:
+            raw = generate_quiz_payload(
+                title,
+                sections,
+                article_text,
+                min_questions=min_questions,
+                max_questions=max_questions,
+            )
         payload = _normalize_payload(raw)
         QuizPayload.model_validate(payload)
     except Exception as e:
         log.exception("LLM generation failed")
         raise HTTPException(status_code=502, detail="Quiz generation failed")
 
-    record = {
-        "url": str(req.url),
-        "title": title,
-        "date_generated": _now_str(),
-        "payload": payload,
-    }
-    quiz_id = QUIZ_STORE.create(record, ttl_seconds=60 * 60 * 6)
+    try:
+        record = await crud.create_quiz(
+            db,
+            url=url,
+            title=title,
+            scraped_content=article_text,
+            content_hash=content_hash,
+            etag=None,
+            last_modified=None,
+            full_quiz_data=payload,
+        )
+    except Exception as e:
+        log.exception("Failed to persist quiz")
+        raise HTTPException(status_code=500, detail="Failed to store quiz") from e
 
-    return QuizResponse(
-        id=quiz_id,
-        url=str(req.url),
-        title=title,
-        date_generated=record["date_generated"],
-        full_quiz_data=QuizPayload.model_validate(payload),
-    )
+    return _quiz_to_response(record)
 
 
 @router.get("/quiz/{quiz_id}", response_model=QuizResponse)
-async def get_quiz(quiz_id: int) -> QuizResponse:
-    data = QUIZ_STORE.get(quiz_id)
-    if not data:
+async def get_quiz(quiz_id: int, db: AsyncSession = Depends(get_session)) -> QuizResponse:
+    quiz = await crud.get_quiz_by_id(db, quiz_id)
+    if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found or expired")
-    return QuizResponse(
-        id=quiz_id,
-        url=data["url"],
-        title=data["title"],
-        date_generated=data["date_generated"],
-        full_quiz_data=QuizPayload.model_validate(data["payload"]),
-    )
+    return _quiz_to_response(quiz)
 
 
-@router.get("/history")
-async def history(page: int = 1, page_size: int = 10) -> Dict[str, Any]:
-    ids = QUIZ_STORE.list_ids()
-    start = (page - 1) * page_size
-    end = start + page_size
-    items = []
-    for i in ids[start:end]:
-        d = QUIZ_STORE.get(i)
-        if not d:
-            continue
-        items.append(QuizMeta(id=i, url=d["url"], title=d["title"], date_generated=d["date_generated"]).model_dump())
-    return {"items": items, "total": len(ids)}
+@router.get("/history", response_model=HistoryResponse)
+async def history(
+    page: int = 1,
+    page_size: int = 10,
+    db: AsyncSession = Depends(get_session),
+) -> HistoryResponse:
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 50))
+    skip = (page - 1) * page_size
+
+    quizzes, total = await crud.list_quizzes(db, skip=skip, limit=page_size)
+    items = [_quiz_to_meta(q) for q in quizzes]
+    return HistoryResponse(items=items, total=int(total or 0))
 
 
 @router.post("/grade", response_model=GradeResponse)
-async def grade_quiz(req: GradeRequest) -> GradeResponse:
+async def grade_quiz(req: GradeRequest, db: AsyncSession = Depends(get_session)) -> GradeResponse:
     """
     Grade a quiz by ID. Body: { "id": number, "answers": [int,int,...] }
     Each answer is an option index (0..3).
     """
-    quiz = QUIZ_STORE.get(req.id)
+    quiz = await crud.get_quiz_by_id(db, req.id)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found or expired")
 
-    questions: List[Dict[str, Any]] = quiz["payload"]["quiz"]
+    payload = QuizPayload.model_validate(quiz.full_quiz_data)
+    questions = payload.quiz
+
     if len(req.answers) != len(questions):
         raise HTTPException(status_code=400, detail="answer count mismatch")
 
     results: List[PerQuestionResult] = []
     correct_total = 0
 
-    for idx, (user_idx, q) in enumerate(zip(req.answers, questions)):
+    for idx, (user_idx, q_model) in enumerate(zip(req.answers, questions)):
+        q = q_model.model_dump()
         correct_idx = _derive_correct_index(q)
         is_correct = (user_idx == correct_idx) and correct_idx != -1
         if is_correct:
