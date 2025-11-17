@@ -19,7 +19,11 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     LOG_LEVEL: str = "INFO"
 
-    ALLOWED_ORIGINS: Union[str, List[str]] = ["http://localhost:5173", "http://localhost:3000"]
+    ALLOWED_ORIGINS: Union[str, List[str]] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://deepklarity-frontend.vercel.app",
+    ]
 
     DATABASE_URL: str
     GEMINI_API_KEY: str | None = None
@@ -40,6 +44,14 @@ class Settings(BaseSettings):
             if vs.startswith("["):
                 return vs
             return [s.strip() for s in vs.split(",") if s.strip()]
+        return v
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def ensure_async_driver(cls, v):
+        if isinstance(v, str):
+            if v.startswith("postgresql://") and "+" not in v.split("postgresql", 1)[1]:
+                return v.replace("postgresql://", "postgresql+asyncpg://", 1)
         return v
 
 settings = Settings()

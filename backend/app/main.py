@@ -21,7 +21,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(api_router)
+    app.include_router(api_router, prefix="/api")
 
     @app.on_event("startup")
     async def on_startup():
